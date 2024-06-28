@@ -1,5 +1,29 @@
 <?php
+header('Content-Type: application/json');
+include_once '../db/db.php';
 
+$data = json_decode(file_get_contents("php://input"), true);
+
+$userID = $data['userID'];
+$columnName = $data['columnName'];
+
+$query = "DELETE FROM user_columns WHERE user_id = ? AND column_name = ?";
+$stmt = $conn->prepare($query);
+$stmt->bind_param("is", $userID, $columnName);
+
+$response = [];
+if ($stmt->execute()) {
+    $response['success'] = true;
+} else {
+    $response['success'] = false;
+    $response['error'] = $stmt->error;
+}
+
+$stmt->close();
+$conn->close();
+
+echo json_encode($response);
+ 
 header('Content-Type: application/json');
 include '../db/db.php';
 
@@ -36,17 +60,27 @@ $columnsStmt = $conn->prepare($columnsQuery);
 $columnsStmt->bind_param('i', $userID);
 $columnsStmt->execute();
 $columnsResult = $columnsStmt->get_result();
-
 $columns = [];
 while ($row = $columnsResult->fetch_assoc()) {
     $userId = $row['user_id'];
+    $id = $row['id'];
     $columnName = $row['column_name'];
     $isVisible = $row['is_visible'];
-    if (isset($users[$userId]) && $isVisible) {
-        $users[$userId]['custom_columns'][] = ['name' => $columnName];
-    }
-    if ($isVisible) {
-        $columns[] = ['name' => $columnName];
+    $columnsQueryInner = "SELECT * FROM custom_column_value WHERE user_id = ? AND user_column_id = ?";
+
+    $columnsStmtInner = $conn->prepare($columnsQueryInner);
+    $columnsStmtInner->bind_param('ii', $userId, $id);
+    $columnsStmtInner->execute();
+    $columnsResultInner = $columnsStmtInner->get_result();
+    while ($rowInner = $columnsResultInner->fetch_assoc()) {
+        $columnName = $rowInner['value'];
+
+        if (isset($users[$userId]) && $isVisible) {
+            $users[$userId]['custom_columns'][] = ['name' => $columnName];
+        }
+        if ($isVisible) {
+            $columns[] = ['name' => $columnName];
+        }
     }
 }
 

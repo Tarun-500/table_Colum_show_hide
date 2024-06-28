@@ -25,7 +25,6 @@
           </ul>
         </div>
 
-
         <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#exampleModal">
           Add Column
         </button>
@@ -54,7 +53,6 @@
     </div>
   </div>
 
-
   <!-- add column modal -->
   <div class="modal fade" id="exampleModal" tabindex="-1" aria-labelledby="exampleModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
@@ -80,10 +78,17 @@
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
   <script>
-    // fetching data from db 
+    // Helper function to get query parameter
+    function getQueryParam(param) {
+      const urlParams = new URLSearchParams(window.location.search);
+      return urlParams.get(param);
+    }
+
     document.addEventListener("DOMContentLoaded", function() {
+      const userID = getQueryParam('userID');
+
       function fetchUsers() {
-        fetch("includes/fetchUser.php")
+        fetch(`includes/fetchUser.php?userID=${userID}`)
           .then(response => {
             if (!response.ok) {
               throw new Error(`HTTP error! Status: ${response.status}`);
@@ -94,20 +99,43 @@
             const tableBody = document.getElementById("user-table-body");
             tableBody.innerHTML = "";
 
-            data.forEach((user, index) => {
-              const row = `<tr>
-                            <th scope="row">${index + 1}</th>
-                            <td>${user.name}</td>
-                            <td>${user.nickname}</td>
-                            <td>${user.mobile}</td>
-                            <td>${user.email}</td>
-                            <td>${user.role}</td>
-                            <td>${user.address}</td>
-                            <td>${user.gender}</td>
-                            <td><img src="${user.profile_image}" alt="Profile Image" class="profile_img"></td>
-                        </tr>`;
-              tableBody.insertAdjacentHTML("beforeend", row);
-            });
+            if (Array.isArray(data.users)) {
+              data.users.forEach((user, index) => {
+                let row = document.createElement('tr');
+                Object.values(user).forEach(value => {
+                  if (Array.isArray(value)) {
+                    value.forEach(column => {
+                      let cell = document.createElement('td');
+                      cell.textContent = column.name;
+                      row.appendChild(cell);
+                    });
+                  } else {
+                    let cell = document.createElement('td');
+                    cell.textContent = value;
+                    row.appendChild(cell);
+                  }
+                });
+                tableBody.appendChild(row);
+              });
+            }
+
+            if (Array.isArray(data.columns)) {
+              data.columns.forEach(column => {
+                const tableHead = document.getElementById("user-table").querySelector("thead tr");
+                const newColumnHeader = document.createElement("th");
+                newColumnHeader.textContent = column.name;
+                tableHead.appendChild(newColumnHeader);
+
+                const tableBodyRows = document.getElementById("user-table-body").querySelectorAll("tr");
+                tableBodyRows.forEach(row => {
+                  const newCell = document.createElement("td");
+                  newCell.setAttribute("contenteditable", "true");
+                  row.appendChild(newCell);
+                });
+              });
+            }
+
+            updateShowHideDropdown();
           })
           .catch(error => {
             console.error("Error fetching user data:", error);
@@ -117,40 +145,52 @@
       fetchUsers();
 
 
-      //  add new column
+      // for Adding new column
       const addColumnBtn = document.getElementById("addColumnBtn");
       addColumnBtn.addEventListener("click", function() {
         const columnName = document.getElementById("columnName").value.trim();
         if (columnName !== "") {
-          const tableHead = document.getElementById("user-table").querySelector("thead tr");
-          const existingHeaders = Array.from(tableHead.children).map(th => th.textContent.trim());
+          fetch("includes/addColumns.php", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify({
+                userID,
+                columnName
+              })
+            })
+            .then(response => response.json())
+            .then(data => {
+               
 
-          // checking exists same column name
-          if (existingHeaders.includes(columnName)) {
-            alert("Column already exists");
-          } else {
-            const newColumnHeader = document.createElement("th");
-            newColumnHeader.textContent = columnName;
-            tableHead.appendChild(newColumnHeader);
+              if (Array.isArray(data.columns)) {
+                data.columns.forEach(column => {
+                  const tableHead = document.getElementById("user-table").querySelector("thead tr");
+                  const newColumnHeader = document.createElement("th");
+                  newColumnHeader.textContent = column.name;
+                  tableHead.appendChild(newColumnHeader);
 
-            const tableBodyRows = document.getElementById("user-table-body").querySelectorAll("tr");
-            tableBodyRows.forEach(row => {
-              const newCell = document.createElement("td");
-              newCell.setAttribute("contenteditable", "true");
-              row.appendChild(newCell);
+                  const tableBodyRows = document.getElementById("user-table-body").querySelectorAll("tr");
+                  tableBodyRows.forEach(row => {
+                    const newCell = document.createElement("td");
+                    newCell.setAttribute("contenteditable", "true");
+                    row.appendChild(newCell);
+                    // Hide the column in the table if it's not visible
+                    if (!column.is_visible) {
+                      newColumnHeader.style.display = "none";
+                      newCell.style.display = "none";
+                    }
+                  });
+                });
+              }
+ 
+            })
+            .catch(error => {
+              console.error("Error adding column:", error);
             });
-
-            // Update Show/Hide Column dropdown
-            updateShowHideDropdown();
-
-            // Close modal and clear input field
-            const modal = bootstrap.Modal.getInstance(document.getElementById("exampleModal"));
-            modal.hide();
-            document.getElementById("columnName").value = "";
-          }
         }
       });
-
 
       // Update Show/Hide Column dropdown
       function updateShowHideDropdown() {
@@ -181,7 +221,6 @@
         addShowHideListeners();
       }
 
-
       // Add event listeners to checkboxes
       function addShowHideListeners() {
         const checkboxes = document.querySelectorAll("#showHideDropdown input[type='checkbox']");
@@ -200,9 +239,60 @@
             }
           });
         });
+        fetchUsers();
       }
 
       updateShowHideDropdown();
+
+
+
+      function updateColumnVisibility(columnName, isVisible) {
+        fetch("includes/columShowHide.php", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              userID,
+              columnName,
+              isVisible
+            })
+          })
+          .then(response => response.json())
+          .then(data => {
+            if (!data.success) {
+              console.error("Failed to update column visibility.");
+            }
+          })
+          .catch(error => {
+            console.error("Error updating column visibility:", error);
+          });
+      }
+
+      function addShowHideListeners() {
+        const checkboxes = document.querySelectorAll("#showHideDropdown input[type='checkbox']");
+        checkboxes.forEach(checkbox => {
+          checkbox.addEventListener("change", function() {
+            const index = this.value;
+            const table = document.getElementById("user-table");
+            const header = table.querySelector(`thead th:nth-child(${parseInt(index) + 1})`);
+            const cells = table.querySelectorAll(`tbody td:nth-child(${parseInt(index) + 1})`);
+            const columnName = header.textContent.trim();
+            if (this.checked) {
+              header.style.display = "";
+              cells.forEach(cell => cell.style.display = "");
+              updateColumnVisibility(columnName, true);
+            } else {
+              header.style.display = "none";
+              cells.forEach(cell => cell.style.display = "none");
+              updateColumnVisibility(columnName, false);
+            }
+          });
+        });
+      }
+
+      // Call the function to add event listeners
+      addShowHideListeners();
 
     });
   </script>
